@@ -3,7 +3,10 @@ use log::{info,warn};
 use env_logger::Logger;
 use futures::prelude::*;
 use tokio::prelude::*;
+use mongodb::options::DeleteOptions;
+use mongodb::options::Hint;
 use mongodb::bson::doc;
+use mongodb::bson::ser as bsonser;
 use mongodb::bson::Document;
 use serde::{ Serialize, Deserialize};
 
@@ -24,7 +27,6 @@ struct DataSys {
 impl DataSys {
 
     fn new(url: &str) -> Self {
-        info!("[DATA SYS] Set url {}",url);
         DataSys {
             url_root: url.to_string(),
             handle_coll: None,
@@ -68,8 +70,27 @@ impl DataSys {
         }
     }
 
-    async fn insert<'a>(&mut self, data: impl Serialize) {
+    async fn insert<'a>(&mut self, data: &'a impl Serialize) {
+        let bson = bsonser::to_document(data);
+
+        if let Ok(doc) = bson {
+            self.handle_coll.clone().unwrap().insert_one(doc,None).await;
+        }
+        else{
+            warn!("Can not insert document in database {}, on Collection {}",self.db.unwrap(),self.collection.unwrap())
+        }
+    }
+
+    async fn delete<'a>(&mut self, data: &'a impl Serialize,finder: &str) {
         
+        if let Some(handle) = self.handle_coll {
+            let doc = bsonser::to_document(data);
+
+            if let Ok(doc) = doc {;
+
+                self.handle_coll.clone().unwrap().delete_one(doc,option).await;
+            }
+        }
     }
 }
 
