@@ -6,3 +6,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
+
+[lib]
+name = "data_sys"
+path = "/data_sys/src/lib.rs"

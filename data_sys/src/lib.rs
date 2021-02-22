@@ -1,10 +1,11 @@
-use mongodb::{Client, options::ClientOptions, error::Error as DBError};
+use mongodb::{Client, options::ClientOptions, error::Error as DBError, Collection, Database};
 use log::{info,warn};
 use env_logger::Logger;
 use futures::prelude::*;
 use tokio::prelude::*;
 use mongodb::bson::doc;
 use mongodb::bson::Document;
+use serde::{ Serialize, Deserialize};
 
 pub trait Data {
     type Item;
@@ -15,7 +16,7 @@ pub trait Data {
 
 struct DataSys {
     url_root: String,
-    client: Option<Client>,
+    handle_coll: Option<Collection>,
     db: Option<String>,
     collection: Option<String>,
 }
@@ -26,7 +27,9 @@ impl DataSys {
         info!("[DATA SYS] Set url {}",url);
         DataSys {
             url_root: url.to_string(),
-            client: None,
+            handle_coll: None,
+            db: None,
+            collection: None,
         }
     }
 
@@ -49,11 +52,24 @@ impl DataSys {
         // Get a handle to the deployment.
         let client = Client::with_options(client_options.unwrap());
 
-        self.client = Some(client.unwrap());
+        if let Ok(client) = client {
+
+            if self.db.is_some() & self.collection.is_some() {
+                let db_name = self.db.clone();
+                let collection_name = self.collection.clone();
+
+                let handle_coll = client.database(db_name.unwrap().as_ref())
+                    .collection(collection_name.unwrap().as_ref());
+
+                self.handle_coll = Some(handle_coll);
+                
+            }
+            
+        }
     }
 
-    async fn insert<'a>(&mut self, data: impl Data) {
-        let doc = doc! { "title": "1984", "author": "George Orwell" };
+    async fn insert<'a>(&mut self, data: impl Serialize) {
+        
     }
 }
 
@@ -65,11 +81,12 @@ mod tests {
         use crate::DataSys;
         use futures::prelude::*;
         use tokio::prelude::*;
-        use 
 
         let mut rt = tokio::runtime::Runtime::new().unwrap();
 
-        let mut data_sys = DataSys::new("mongodb://localhost:27017");
+        let mut data_sys = DataSys::new("mongodb://localhost:27017")
+            .in_db("Test-app")
+            .in_collection("logging");
 
         rt.block_on(data_sys.connection());
         println!("Hello");
