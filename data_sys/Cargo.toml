@@ -1,0 +1,12 @@
+[package]
+name = "data_sys"
+version = "0.1.0"
+authors = ["CyberWolf <borel.loic.37@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.8.3"
+mongodb = "1.2.0"
+futures = "0.3"
+tokio = { version = "0.2", features = ["full"] }
