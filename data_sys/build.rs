@@ -1,5 +1,5 @@
 fn main() {
     
-    println!("cargo:rustc-env=MY_LOG_LEVEL=info");
+    println!("cargo:rustc-env=RUST_LOG=info");
 
 }
