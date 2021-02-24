@@ -9,6 +9,7 @@ use mongodb::bson::doc;
 use mongodb::bson::ser as bsonser;
 use mongodb::bson::Document;
 use serde::{ Serialize, Deserialize};
+use std::sync::Arc;
 
 async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str]) -> Option<Vec<Collection>> {
 
@@ -54,9 +55,15 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
     }
 }
 
+enum DataStatus {
+    Insert(Arc<Document>),
+    Update(Arc<Document>),
+    Delete(Arc<Document>),
+}
+
 struct DataManager {
     list_collections: Vec<Collection>,
-    list_db: Vec<Database>,
+    stack_tasks: Vec<DataStatus>,
     url_root: String,
 }
 
@@ -64,8 +71,8 @@ impl DataManager {
     fn new(url_root: &str) -> Self {
         DataManager{
             list_collections: Vec::new(),
-            list_db: Vec::new(),
             url_root: String::from(url_root),
+            stack_tasks: Vec::new(),
         }
     }
 
@@ -76,7 +83,15 @@ impl DataManager {
 
         let stack_connection = rt.block_on(connection(&self.url_root,database,collections));
 
+        if let Some(collect) = stack_connection {
+            self.list_collections = collect;
+        }
+        else {
+            warn!("Some trouble appear")
+        }
     }
+
+    fn insert
 }
 
 struct DataSys {
