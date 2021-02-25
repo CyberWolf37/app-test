@@ -4,14 +4,18 @@ use env_logger::Logger;
 use futures::prelude::*;
 use tokio::prelude::*;
 use mongodb::options::DeleteOptions;
+use mongodb::options::UpdateModifications;
 use mongodb::options::Hint;
 use mongodb::bson::doc;
+use mongodb::options::FindOptions;
 use mongodb::bson::ser as bsonser;
 use mongodb::bson::Document;
 use serde::{ Serialize, Deserialize};
 use std::sync::Arc;
 
 async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str]) -> Option<Vec<Collection>> {
+    unimplemented!();
+    /*
 
     // Parse a connection string into an options struct.
     let client_options = ClientOptions::parse(url_root).await;
@@ -35,7 +39,7 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
                     warn!("Problème de connection sur la collection {}",item);
                 }
             }
-        })
+        });
 
         if self.db.is_some() & self.collection.is_some() {
             let db_name = self.db.clone();
@@ -52,7 +56,7 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
     else {
         warn!("Problème de connection à l'url {}",url_root);
         None
-    }
+    }*/
 }
 
 enum DataStatus {
@@ -90,8 +94,6 @@ impl DataManager {
             warn!("Some trouble appear")
         }
     }
-
-    fn insert
 }
 
 struct DataSys {
@@ -160,6 +162,37 @@ impl DataSys {
     }
 
     async fn delete<'a>(&mut self, data: &'a impl Serialize,finder: &str) {
+        let document = bsonser::to_document(data);
+        
+        if let Ok(document) = document {
+            let keyname= document.get(finder);
+
+            if let Some(keyname) = keyname {
+                let finopt = FindOptions::builder().hint(Hint::Keys(doc!{ finder: keyname }));
+                let result = self.handle_coll.clone().unwrap().delete_one(document, None).await;
+
+                if let Ok(result) = result {
+                    info!("Object deleted 👍");
+                }
+                
+            }
+        }
+        
+    }
+
+    async fn update<'a>(&mut self, data: &'a impl Serialize, finder: &str) {
+        let document = bsonser::to_document(data);
+        
+        if let Ok(document) = document {
+
+            let query = doc! { finder: document.get(finder).unwrap()};
+            
+            let result = self.handle_coll.clone().unwrap().update_one(query, UpdateModifications::Document(document),None).await;
+
+            if let Ok(_) = result {
+                info!("Object Update 👍");
+            }
+        }
     }
 }
 
@@ -179,7 +212,8 @@ mod tests {
             say: String,
         }
 
-        let profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
+        let mut profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
+        let profilup = Profil{name: "Sonia".to_string(),say: "Animal crossing".to_string()};
         env_logger::init();
 
         let mut rt = tokio::runtime::Runtime::new().unwrap();
@@ -189,6 +223,10 @@ mod tests {
             .in_collection("profil");
 
         rt.block_on(data_sys.connection());
-        rt.block_on(data_sys.insert(&profil));       
+        rt.block_on(data_sys.insert(&profil));  
+        rt.block_on(data_sys.delete(&profil, "name"));
+        rt.block_on(data_sys.insert(&profil));
+        profil.say = "animal crossing".to_string();
+        rt.block_on(data_sys.update(&profil, "name"));
     }
 }
