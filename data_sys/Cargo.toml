@@ -11,3 +11,6 @@ mongodb = "1.2.0"
 futures = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 serde = "1.0.123"
+
+[lib]
+proc-macro = true

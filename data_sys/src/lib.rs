@@ -1,21 +1,32 @@
-use mongodb::{Client, options::ClientOptions, error::Error as DBError, Collection, Database};
-use log::{info,warn};
-use env_logger::Logger;
+use mongodb::{
+    Client, 
+    options::{
+        ClientOptions,
+        DeleteOptions,
+        FindOptions,
+        UpdateModifications,
+        Hint,
+    },
+    error::Error as DBError,
+    Collection,
+    Database,
+    bson::{
+        Document,
+        ser as bsonser,
+        doc,
+    },
+};
+
 use futures::prelude::*;
 use tokio::prelude::*;
-use mongodb::options::DeleteOptions;
-use mongodb::options::UpdateModifications;
-use mongodb::options::Hint;
-use mongodb::bson::doc;
-use mongodb::options::FindOptions;
-use mongodb::bson::ser as bsonser;
-use mongodb::bson::Document;
+use tokio::runtime::{ Runtime, TaskExecutor };
 use serde::{ Serialize, Deserialize};
 use std::sync::Arc;
+use log::{info,warn};
+use env_logger::Logger;
+use data::{ DataCollection, DataStatus};
 
-async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str]) -> Option<Vec<Collection>> {
-    unimplemented!();
-    /*
+async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str]) -> Option<Vec<DataCollection>> {
 
     // Parse a connection string into an options struct.
     let client_options = ClientOptions::parse(url_root).await;
@@ -25,49 +36,28 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
 
     if let Ok(client) = client {
 
-        let stack_collection: Vec<Collection> = Vec::new();
+        let mut stack_collection: Vec<DataCollection> = Vec::new();
 
         collections.iter().for_each(|item| {
-            let handle = client.database(database).collection(item);
-            
-            match handle {
-                Ok(handle) => {
-                    info!("Connecté à la collection {}", item);
-                    stack_collection.push(handle);
-                },
-                Err(_) => {
-                    warn!("Problème de connection sur la collection {}",item);
-                }
-            }
+            let collection = client.database(database).collection(item);
+            let handle = DataCollection::new(database, collection);
+            info!("Connecté à la collection {}", item);
+            stack_collection.push(handle);
+
         });
 
-        if self.db.is_some() & self.collection.is_some() {
-            let db_name = self.db.clone();
-            let collection_name = self.collection.clone();
-
-            let handle_coll = client.database(db_name.unwrap().as_ref())
-                .collection(collection_name.unwrap().as_ref());
-
-            self.handle_coll = Some(handle_coll);
-            
-        }
+        return Some(stack_collection);
         
     }
     else {
         warn!("Problème de connection à l'url {}",url_root);
         None
-    }*/
-}
-
-enum DataStatus {
-    Insert(Arc<Document>),
-    Update(Arc<Document>),
-    Delete(Arc<Document>),
+    }
 }
 
 struct DataManager {
-    list_collections: Vec<Collection>,
-    stack_tasks: Vec<DataStatus>,
+    list_collections: Vec<DataCollection>,
+    stack_tasks: Arc<Vec<Arc<dyn fn()>>>,
     url_root: String,
 }
 
@@ -76,7 +66,7 @@ impl DataManager {
         DataManager{
             list_collections: Vec::new(),
             url_root: String::from(url_root),
-            stack_tasks: Vec::new(),
+            stack_tasks: Arc::new(Vec::new()),
         }
     }
 
@@ -85,7 +75,7 @@ impl DataManager {
 
         let mut rt = tokio::runtime::Runtime::new().unwrap();
 
-        let stack_connection = rt.block_on(connection(&self.url_root,database,collections));
+        let stack_connection = rt.block_on(connection(self.url_root.as_str(),database,collections));
 
         if let Some(collect) = stack_connection {
             self.list_collections = collect;
@@ -94,139 +84,62 @@ impl DataManager {
             warn!("Some trouble appear")
         }
     }
-}
 
-struct DataSys {
-    url_root: String,
-    handle_coll: Option<Collection>,
-    db: Option<String>,
-    collection: Option<String>,
-}
+    fn launch(&self) {
+        let mut rt = tokio::runtime::Runtime::new().unwrap();
+        let executor = rt.executor();
+        let task = self.stack_tasks.clone().first();
 
-impl DataSys {
-
-    fn new(url: &str) -> Self {
-        DataSys {
-            url_root: url.to_string(),
-            handle_coll: None,
-            db: None,
-            collection: None,
-        }
+        executor.spawn(future::lazy(|| {
+            Ok(())
+        }));
     }
 
-    fn in_db(mut self, db: &str) -> Self {
-        self.db = Some(db.to_string());
-        self
-    }
+    fn insert<'a>(&self, dataState: DataStatus,collection: &'a DataCollection) {
 
-    fn in_collection(mut self, collection: &str) -> Self {
-        self.collection = Some(collection.to_string());
-        self
-    }
-
-    async fn connection(&mut self) {
-
-        info!("Try to connect to {}",self.url_root);
-        // Parse a connection string into an options struct.
-        let client_options = ClientOptions::parse(self.url_root.as_str()).await;
-
-        // Get a handle to the deployment.
-        let client = Client::with_options(client_options.unwrap());
-
-        if let Ok(client) = client {
-
-            if self.db.is_some() & self.collection.is_some() {
-                let db_name = self.db.clone();
-                let collection_name = self.collection.clone();
-
-                let handle_coll = client.database(db_name.unwrap().as_ref())
-                    .collection(collection_name.unwrap().as_ref());
-
-                self.handle_coll = Some(handle_coll);
-                
+        let func = move || {
+            match dataState {
+                DataStatus::Insert(doc) => {
+                    collection.insert_one(doc,None);
+                },
+                DataStatus::Delete(query) => {
+                    collection.delete_one(query,None);
+                },
+                DataStatus::Update(query,doc) => {
+                    collection.update_one(query,doc,None);
+                },
             }
-            
-        }
-    }
+        };
 
-    async fn insert<'a>(&self, data: &'a impl Serialize) {
-        let bson = bsonser::to_document(data);
-
-        if let Ok(doc) = bson {
-            self.handle_coll.clone().unwrap().insert_one(doc,None).await;
-            info!("Object inserted 👍")
-        }
-        else{
-            warn!("Can not insert document in database {}, on Collection {}",self.db.as_ref().unwrap(),self.collection.as_ref().unwrap())
-        }
-    }
-
-    async fn delete<'a>(&mut self, data: &'a impl Serialize,finder: &str) {
-        let document = bsonser::to_document(data);
-        
-        if let Ok(document) = document {
-            let keyname= document.get(finder);
-
-            if let Some(keyname) = keyname {
-                let finopt = FindOptions::builder().hint(Hint::Keys(doc!{ finder: keyname }));
-                let result = self.handle_coll.clone().unwrap().delete_one(document, None).await;
-
-                if let Ok(result) = result {
-                    info!("Object deleted 👍");
-                }
-                
-            }
-        }
-        
-    }
-
-    async fn update<'a>(&mut self, data: &'a impl Serialize, finder: &str) {
-        let document = bsonser::to_document(data);
-        
-        if let Ok(document) = document {
-
-            let query = doc! { finder: document.get(finder).unwrap()};
-            
-            let result = self.handle_coll.clone().unwrap().update_one(query, UpdateModifications::Document(document),None).await;
-
-            if let Ok(_) = result {
-                info!("Object Update 👍");
-            }
-        }
+        self.stack_tasks.clone().push(func);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn it_works() {
-        use crate::DataSys;
+        use crate::DataManager;
+        use crate::data::DataCollection;
+        use crate::prelude::MongoDoc;
         use futures::prelude::*;
         use tokio::prelude::*;
         use serde::{Serialize, Deserialize};
+        use mongodb::bson::doc;
 
         #[derive(Serialize, Deserialize)]
-        struct Profil{
+        struct Profil {
             name: String,
             say: String,
         }
 
-        let mut profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
-        let profilup = Profil{name: "Sonia".to_string(),say: "Animal crossing".to_string()};
         env_logger::init();
 
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
+        let array_collection = ["profil"];
 
-        let mut data_sys = DataSys::new("mongodb://localhost:27017")
-            .in_db("test-app")
-            .in_collection("profil");
+        let dataManager = DataManager::new("mongodb://localhost:27017");
+        dataManager.connect("test-app", &array_collection);
 
-        rt.block_on(data_sys.connection());
-        rt.block_on(data_sys.insert(&profil));  
-        rt.block_on(data_sys.delete(&profil, "name"));
-        rt.block_on(data_sys.insert(&profil));
-        profil.say = "animal crossing".to_string();
-        rt.block_on(data_sys.update(&profil, "name"));
+        let mut profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
     }
 }
