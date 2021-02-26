@@ -1,3 +1,6 @@
+mod data;
+mod prelude;
+
 use mongodb::{
     Client, 
     options::{
@@ -19,7 +22,7 @@ use mongodb::{
 
 use futures::prelude::*;
 use tokio::prelude::*;
-use tokio::runtime::{ Runtime, TaskExecutor };
+use tokio::runtime::{ Runtime };
 use serde::{ Serialize, Deserialize};
 use std::sync::Arc;
 use log::{info,warn};
@@ -57,7 +60,7 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
 
 struct DataManager {
     list_collections: Vec<DataCollection>,
-    stack_tasks: Arc<Vec<Arc<dyn fn()>>>,
+    stack_tasks: Vec<Arc<dyn Fn() + Send + Sync>>,
     url_root: String,
 }
 
@@ -66,7 +69,7 @@ impl DataManager {
         DataManager{
             list_collections: Vec::new(),
             url_root: String::from(url_root),
-            stack_tasks: Arc::new(Vec::new()),
+            stack_tasks: Vec::new(),
         }
     }
 
@@ -121,7 +124,7 @@ mod tests {
     fn it_works() {
         use crate::DataManager;
         use crate::data::DataCollection;
-        use crate::prelude::MongoDoc;
+        use prelude::MongoDoc;
         use futures::prelude::*;
         use tokio::prelude::*;
         use serde::{Serialize, Deserialize};

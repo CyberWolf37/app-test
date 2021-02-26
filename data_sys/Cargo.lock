@@ -242,6 +242,7 @@ dependencies = [
  "futures",
  "log",
  "mongodb",
+ "quote",
  "serde",
  "tokio",
 ]
