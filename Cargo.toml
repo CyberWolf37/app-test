@@ -8,5 +8,6 @@ edition = "2018"
 log = "0.4"
 
 [lib]
+proc-macro = true
 name = "data_sys"
 path = "/data_sys/src/lib.rs"

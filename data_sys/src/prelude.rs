@@ -14,7 +14,7 @@ pub fn mongoDoc(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     let expanded = quote! {
-        impl crate::MongoDoc for #name {
+        impl crate::data::MongoDoc for #name {
             fn insert(&self, dataColl: &DataCollection) -> dyn Fn() +Send +Sync {
                 let bson = bsonser::to_document(&self);
 
@@ -46,24 +46,29 @@ pub fn mongoDoc(input: TokenStream) -> TokenStream {
                             
                         }
                     }
-                }
+                };
 
                 func
             }
-            fn update(&self, modification: Document) {
+            /*fn update(&self, modification: Document, dataColl: &DataCollection) -> dyn Fn() +Send +Sync {
                 let document = bsonser::to_document(data);
         
                 if let Ok(document) = document {
 
                     let query = doc! { findKey: document.get(findKey).unwrap()};
-                    
-                    let result = #mongoManager.insert(DataStatus::Update(query, modification,None).await;
 
-                    if let Ok(_) = result {
-                        info!("Object Update 👍");
-                    }
+                    let func = move || {
+                        
+                        let result = dataColl.update_one(DataStatus::Update(query, modification,None).await;
+
+                        if let Ok(_) = result {
+                            info!("Object Update 👍");
+                        }
+                    };
+
+                    func
                 }
-            }
+            }*/
         }
     };
 

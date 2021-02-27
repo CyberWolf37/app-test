@@ -1,8 +1,11 @@
 mod data;
-mod prelude;
 
 use mongodb::{
-    Client, 
+    sync::{ 
+        Client,
+        Collection,
+        Database,
+    },
     options::{
         ClientOptions,
         DeleteOptions,
@@ -11,8 +14,7 @@ use mongodb::{
         Hint,
     },
     error::Error as DBError,
-    Collection,
-    Database,
+    
     bson::{
         Document,
         ser as bsonser,
@@ -29,10 +31,10 @@ use log::{info,warn};
 use env_logger::Logger;
 use data::{ DataCollection, DataStatus};
 
-async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str]) -> Option<Vec<DataCollection>> {
+fn connection<'a>(url_root: &str, database: &'static str, collections: &'a [&str]) -> Option<Vec<DataCollection>> {
 
     // Parse a connection string into an options struct.
-    let client_options = ClientOptions::parse(url_root).await;
+    let client_options = ClientOptions::parse(url_root);
 
     // Get a handle to the deployment.
     let client = Client::with_options(client_options.unwrap());
@@ -60,7 +62,7 @@ async fn connection<'a>(url_root: &str, database: &str, collections: &'a [&str])
 
 struct DataManager {
     list_collections: Vec<DataCollection>,
-    stack_tasks: Vec<Arc<dyn Fn() + Send + Sync>>,
+    stack_tasks: Vec<Arc<dyn FnOnce() + Send + Sync>>,
     url_root: String,
 }
 
@@ -73,12 +75,10 @@ impl DataManager {
         }
     }
 
-    fn connect<'a>(mut self, database: &str, collections: &'a [&str]) {
+    fn connect<'a>(mut self, database: &'static str, collections: &'a [&str]) {
         info!("Connect to database {} in progress ", database);
 
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-
-        let stack_connection = rt.block_on(connection(self.url_root.as_str(),database,collections));
+        let stack_connection = connection(self.url_root.as_str(),database,collections);
 
         if let Some(collect) = stack_connection {
             self.list_collections = collect;
@@ -90,12 +90,7 @@ impl DataManager {
 
     fn launch(&self) {
         let mut rt = tokio::runtime::Runtime::new().unwrap();
-        let executor = rt.executor();
         let task = self.stack_tasks.clone().first();
-
-        executor.spawn(future::lazy(|| {
-            Ok(())
-        }));
     }
 
     fn insert<'a>(&self, dataState: DataStatus,collection: &'a DataCollection) {
@@ -103,18 +98,18 @@ impl DataManager {
         let func = move || {
             match dataState {
                 DataStatus::Insert(doc) => {
-                    collection.insert_one(doc,None);
+                    collection.get_collection().insert_one(doc,None);
                 },
                 DataStatus::Delete(query) => {
-                    collection.delete_one(query,None);
+                    collection.get_collection().delete_one(query,None);
                 },
                 DataStatus::Update(query,doc) => {
-                    collection.update_one(query,doc,None);
+                    collection.get_collection().update_one(query,doc,None);
                 },
             }
         };
 
-        self.stack_tasks.clone().push(func);
+        self.stack_tasks.clone().push(Arc::new(func));
     }
 }
 
@@ -124,7 +119,6 @@ mod tests {
     fn it_works() {
         use crate::DataManager;
         use crate::data::DataCollection;
-        use prelude::MongoDoc;
         use futures::prelude::*;
         use tokio::prelude::*;
         use serde::{Serialize, Deserialize};

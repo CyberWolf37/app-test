@@ -1,5 +1,7 @@
 use mongodb::bson::{ Document };
-use mongodb::{Collection};
+use mongodb::sync::{
+    Collection
+};
 use serde::Serialize;
 
 pub trait MongoDoc: Serialize {
