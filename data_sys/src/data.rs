@@ -3,17 +3,18 @@ use mongodb::sync::{
     Collection
 };
 use serde::Serialize;
+use std::sync::Arc;
 
 pub trait MongoDoc: Serialize {
-    fn insert(&self,dataColl: &DataCollection) -> dyn Fn() +Send +Sync;
-    fn delete(&self,dataColl: &DataCollection) -> dyn Fn() +Send +Sync;
-    fn update(&self, modification: Document,dataColl: &DataCollection) -> dyn Fn() +Send +Sync;
+    fn insert(&self,dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +'static +Send +Sync>;
+    fn delete(&self,dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +'static +Send +Sync>;
+    fn update(&self, modification: Document,dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +'static +Send +Sync>;
 }
 
 pub enum DataStatus {
-    Insert(Document),
-    Delete(Document),
-    Update(Document,Document),
+    Insert,
+    Delete,
+    Update(Document),
 }
 
 pub struct DataCollection {
@@ -32,6 +33,10 @@ impl DataCollection {
 
     pub fn get_collection(&self) -> &Collection {
         self.get_collection()
+    }
+
+    pub fn get_name_coll(&self) -> &str {
+        self.get_collection().name()
     }
 
     pub fn query() {
