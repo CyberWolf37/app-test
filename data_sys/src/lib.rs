@@ -29,7 +29,11 @@ use serde::{ Serialize, Deserialize};
 use std::sync::Arc;
 use log::{info,warn};
 use env_logger::Logger;
-use data::{ DataCollection, DataStatus, MongoDoc};
+use data::{ DataCollection, DataStatus, MongoDoc, Task};
+use std::thread;
+use std::sync::Mutex;
+use std::marker::Copy;
+
 
 fn connection<'a>(url_root: &str, database: &'static str, collections: &'a [&str]) -> Option<Vec<Arc<DataCollection>>> {
 
@@ -62,7 +66,7 @@ fn connection<'a>(url_root: &str, database: &'static str, collections: &'a [&str
 
 struct DataManager {
     list_collections: Vec<Arc<DataCollection>>,
-    stack_tasks: Vec<Arc<dyn FnOnce() + 'static + Send + Sync>>,
+    stack_tasks: Arc<Mutex<Vec<Arc<Task>>>>,
     url_root: String,
 }
 
@@ -71,7 +75,7 @@ impl DataManager {
         DataManager{
             list_collections: Vec::new(),
             url_root: String::from(url_root),
-            stack_tasks: Vec::new(),
+            stack_tasks: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -89,44 +93,58 @@ impl DataManager {
     }
 
     fn launch(&self) {
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
-        let task = self.stack_tasks.clone().first();
+        let stack = self.stack_tasks.clone();
+        thread::spawn(move || {
+            loop {
+                if let Ok(mut stack_task) = stack.lock() {
+
+                    if let Some(task) = stack_task.pop() {
+                       task.consume();
+                    }  
+                }
+            }
+        });
     }
 
-    fn insert<'a>(&self, dataState: DataStatus,data: impl MongoDoc, collection: &str) {
+    fn insert<'a>(&mut self, dataState: DataStatus,data: impl MongoDoc, collection: &str) {
 
         let coll = self.find_coll(collection);
 
         if let Some(collection) = coll {
-            let func: Arc<dyn FnOnce() + 'static + Send + Sync>  = 
-            match dataState {
-                DataStatus::Insert => {
-                    data.insert(collection.clone())
-                },
-                DataStatus::Delete => {
-                    data.delete(collection)
-                },
-                DataStatus::Update(doc) => {
-                    data.update(doc, collection)
-                },
-            };
+            let task: Arc<Task>  = 
+                match dataState {
+                    DataStatus::Insert => {
+                        info!("Is an insert value");
+                        data.insert(collection.clone())
+                    },
+                    DataStatus::Delete => {
+                        info!("Is an delete value");
+                        data.delete(collection)
+                    },
+                    DataStatus::Update(doc) => {
+                        info!("Is an update value");
+                        data.update(doc, collection)
+                    },
+                };
 
-            self.stack_tasks.clone().push(func);
+            if let Ok(mut stack_func) = self.stack_tasks.lock() {
+                stack_func.push(task);
+            }
         }
         else {
             warn!("Sorry doesn't have this collection : {}",collection );
         }
-
-        
+ 
     }
 
     fn find_coll(&self,name: &str) -> Option<Arc<DataCollection>> {
-        let result = self.list_collections.iter().find(|x| x.get_name_coll() == name );
+        let result = self.list_collections.iter().find(|x| x.clone().get_name_coll() == name );
         
         if let Some(result) = result {
             Some(result.clone())
         }
         else {
+            warn!("Sorry don't have the collection {}",name);
             None
         }
         
@@ -138,7 +156,7 @@ mod tests {
     #[test]
     fn it_works() {
         use crate::DataManager;
-        use crate::data::{DataCollection ,DataStatus ,MongoDoc};
+        use crate::data::{DataCollection ,DataStatus ,MongoDoc ,Task};
         use mongodb::bson::{
             ser as bsonser,
             Document,
@@ -149,6 +167,8 @@ mod tests {
         use mongodb::bson::doc;
         use log::{ info, warn};
         use std::sync::Arc;
+        use std::thread;
+        use std::sync::Mutex;
 
         #[derive(Serialize, Deserialize)]
         struct Profil {
@@ -157,63 +177,36 @@ mod tests {
         }
 
         impl MongoDoc for Profil {
-            fn insert(&self, dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +Send +Sync> {
-                let bson = bsonser::to_document(&self);
+            fn insert(&self, dataColl: Arc<DataCollection>) -> Arc<Task> {
+                let document = bsonser::to_document(&self);
                 let collection = dataColl.clone();
-
-                let func = move || {
-                    if let Ok(doc) = bson {
-                        collection.clone().get_collection().insert_one(doc,None);
-                    }
-                    else{
-                        warn!("Some probleme occurs on insert manager")
-                    }
-                };
-
-                Arc::new(func)
+                Arc::new(Task::new(DataStatus::Insert, dataColl, document.unwrap(), None))
             }
-            fn delete(&self, dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +Send +Sync> {
+            fn delete(&self, dataColl: Arc<DataCollection>) -> Arc<Task> {
                 let document = bsonser::to_document(&self);
                 let collection = dataColl.clone();
 
-                let func = move || {
-                    if let Ok(document) = document {
-                        let keyname= document.get("name");
-
-                        if let Some(keyname) = keyname {
-                            let query = doc! { "name": keyname };
-                            let result = collection.clone().get_collection().delete_one(query,None);
-
-                            if let Ok(result) = result {
-                                info!("Object deleted 👍");
-                            }
-                            
-                        }
-                    }
-                };
-
-                Arc::new(func)
+                let keyname= document.unwrap().get("name");
+                if let Some(keyname) = keyname {
+                    let query = doc! { "name": keyname };   
+                    Arc::new(Task::new(DataStatus::Delete, dataColl, document.unwrap(), Some(query)))                 
+                }
+                else {
+                    panic!("Failed to get the query");
+                }
             }
-            fn update(&self, modification: Document, dataColl: Arc<DataCollection>) -> Arc<dyn FnOnce() +Send +Sync> {
+            fn update(&self, modification: Document, dataColl: Arc<DataCollection>) -> Arc<Task> {
                 let document = bsonser::to_document(&self);
-        
-                let func = move || {
-                    if let Ok(document) = document {
+                let collection = dataColl.clone();
 
-                        let query = doc! { "name": document.get("name").unwrap()};
-
-                        let func = || {
-                            
-                            let result = dataColl.clone().get_collection().update_one(query,modification,None);
-
-                            if let Ok(_) = result {
-                                info!("Object Update 👍");
-                            }
-                        };
-                    }
-                };
-
-                Arc::new(func)
+                let keyname= document.unwrap().get("name");
+                if let Some(keyname) = keyname {
+                    let query = doc! { "name": keyname };   
+                    Arc::new(Task::new(DataStatus::Update(modification), dataColl, document.unwrap(), Some(query)))                 
+                }
+                else {
+                    panic!("Failed to get the query");
+                }
             }
         }
 
@@ -224,8 +217,21 @@ mod tests {
         let mut dataManager = DataManager::new("mongodb://localhost:27017");
         dataManager.connect("test-app", &array_collection);
 
-        let mut profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
+        let profil = Profil{name: "Cyber".to_string(),say: "Hello".to_string()};
+
+        let document = bsonser::to_document(&profil);
+
+        if let Ok(document) = document {
+            info!("Document as parsed = {}",document);
+        }
+        else {
+            warn!("Failed to parse document");
+        }
 
         dataManager.insert(DataStatus::Insert, profil, "profil");
+
+        thread::sleep(std::time::Duration::from_secs(2));
+
+        dataManager.launch();
     }
 }
