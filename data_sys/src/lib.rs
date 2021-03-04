@@ -106,7 +106,7 @@ impl DataManager {
         });
     }
 
-    fn insert<'a>(&mut self, dataState: DataStatus,data: impl MongoDoc, collection: &str) {
+    fn insert<'a>(&mut self, dataState: DataStatus,data: impl MongoDoc, collection: &str, modification: Option<Document>) {
 
         let coll = self.find_coll(collection);
 
@@ -121,9 +121,15 @@ impl DataManager {
                         info!("Is an delete value");
                         data.delete(collection)
                     },
-                    DataStatus::Update(doc) => {
+                    DataStatus::Update => {
                         info!("Is an update value");
-                        data.update(doc, collection)
+                        if let Some(modif) = modification {
+                           data.update(modif, collection) 
+                        }
+                        else {
+                            panic!("if you whant to insert you need to fill modification set");
+                        }
+                        
                     },
                 };
 
@@ -179,30 +185,27 @@ mod tests {
         impl MongoDoc for Profil {
             fn insert(&self, dataColl: Arc<DataCollection>) -> Arc<Task> {
                 let document = bsonser::to_document(&self);
-                let collection = dataColl.clone();
-                Arc::new(Task::new(DataStatus::Insert, dataColl, document.unwrap(), None))
+                Arc::new(Task::new(DataStatus::Insert, dataColl, document.unwrap(), None, None))
             }
             fn delete(&self, dataColl: Arc<DataCollection>) -> Arc<Task> {
-                let document = bsonser::to_document(&self);
-                let collection = dataColl.clone();
+                let document = bsonser::to_document(&self).unwrap();
 
-                let keyname= document.unwrap().get("name");
+                let keyname= document.get("name");
                 if let Some(keyname) = keyname {
                     let query = doc! { "name": keyname };   
-                    Arc::new(Task::new(DataStatus::Delete, dataColl, document.unwrap(), Some(query)))                 
+                    Arc::new(Task::new(DataStatus::Delete, dataColl, bsonser::to_document(&self).unwrap(), Some(query), None))                 
                 }
                 else {
                     panic!("Failed to get the query");
                 }
             }
             fn update(&self, modification: Document, dataColl: Arc<DataCollection>) -> Arc<Task> {
-                let document = bsonser::to_document(&self);
-                let collection = dataColl.clone();
+                let document = bsonser::to_document(&self).unwrap();
 
-                let keyname= document.unwrap().get("name");
+                let keyname = document.get("name");
                 if let Some(keyname) = keyname {
                     let query = doc! { "name": keyname };   
-                    Arc::new(Task::new(DataStatus::Update(modification), dataColl, document.unwrap(), Some(query)))                 
+                    Arc::new(Task::new(DataStatus::Update, dataColl, bsonser::to_document(&self).unwrap(), Some(query), Some(modification)))                 
                 }
                 else {
                     panic!("Failed to get the query");
@@ -228,7 +231,7 @@ mod tests {
             warn!("Failed to parse document");
         }
 
-        dataManager.insert(DataStatus::Insert, profil, "profil");
+        dataManager.insert(DataStatus::Insert, profil, "profil", None);
 
         thread::sleep(std::time::Duration::from_secs(2));
 

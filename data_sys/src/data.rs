@@ -5,6 +5,7 @@ use mongodb::sync::{
 use serde::Serialize;
 use std::sync::Arc;
 use log::{ info, warn};
+use mongodb::options::UpdateModifications;
 
 pub trait MongoDoc: Serialize {
     fn insert(&self,dataColl: Arc<DataCollection>) -> Arc<Task>;
@@ -12,24 +13,27 @@ pub trait MongoDoc: Serialize {
     fn update(&self, modification: Document,dataColl: Arc<DataCollection>) -> Arc<Task>;
 }
 
+
 pub struct Task {
     status: DataStatus,
     collection: Arc<DataCollection>,
     document: Document,
     query: Option<Document>,
+    modification: Option<Document>,
 }
 
 impl Task {
-    pub fn new(status: DataStatus, collection: Arc<DataCollection>, document: Document, query: Option<Document>) -> Self {
+    pub fn new(status: DataStatus, collection: Arc<DataCollection>, document: Document, query: Option<Document>, modification: Option<Document>) -> Self {
         Task {
             status: status,
             collection: collection,
             document: document,
             query: query,
+            modification: modification,
         }
     }
 
-    pub fn consume(&self) {
+    pub fn consume(self) {
         match &self.status {
             DataStatus::Insert => {
                 if let Ok(_) = self.collection.get_collection().insert_one(self.document ,None) {
@@ -52,14 +56,21 @@ impl Task {
                     warn!("Object doesn't have query 🔥")
                 }
             }
-            DataStatus::Update(docu) => {
+            DataStatus::Update => {
                 if let Some(query) = self.query {
-                    if let Ok(_) = self.collection.clone().get_collection().update_one(query,docu,None) {
-                        info!("Object deleted 👍");
+
+                    if let Some(docu) = self.modification {
+                       if let Ok(_) = self.collection.clone().get_collection().update_one(query,UpdateModifications::Document(docu),None) {
+                            info!("Object deleted 👍");
+                        }
+                        else {
+                            warn!("Object has not deleted 😧")
+                        } 
                     }
                     else {
-                        warn!("Object has not deleted 😧")
+                        warn!("Object doesn't have query 🔥")
                     }
+                    
                 }
                 else {
                     warn!("Object doesn't have query 🔥")
@@ -73,7 +84,7 @@ impl Task {
 pub enum DataStatus {
     Insert,
     Delete,
-    Update(Document),
+    Update,
 }
 
 pub struct DataCollection {
