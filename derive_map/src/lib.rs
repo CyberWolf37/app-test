@@ -36,20 +36,20 @@ impl Task {
     pub fn consume(self) {
         match &self.status {
             DataStatus::Insert => {
-                if let Ok(_) = self.collection.get_collection().insert_one(self.document ,None) {
-                    info!("Object inserted 👍");
-                }
-                else {
-                    warn!("Object has not inserted 😧");
+                let handle = self.collection.get_collection().insert_one(self.document ,None);
+                
+                match handle {
+                    Ok(msg) => info!("Object inserted 👍 : {:?}", msg),
+                    Err(e) => warn!("Object has not inserted 😧 : {}",e)
                 }
             },
             DataStatus::Delete => {
                 if let Some(query) = self.query {
-                    if let Ok(_) = self.collection.clone().get_collection().delete_one(query,None) {
-                        info!("Object deleted 👍");
-                    }
-                    else {
-                        warn!("Object has not deleted 😧")
+                    let handle = self.collection.clone().get_collection().delete_one(query,None);
+                    
+                    match handle {
+                        Ok(msg) => info!("Object deleted 👍 : {:?}", msg),
+                        Err(e) => warn!("Object has not deleted 😧 : {}",e)
                     }
                 }
                 else {
@@ -60,12 +60,12 @@ impl Task {
                 if let Some(query) = self.query {
 
                     if let Some(docu) = self.modification {
-                       if let Ok(_) = self.collection.clone().get_collection().update_one(query,UpdateModifications::Document(docu),None) {
-                            info!("Object deleted 👍");
-                        }
-                        else {
-                            warn!("Object has not deleted 😧")
-                        } 
+                       let handle = self.collection.clone().get_collection().update_one(query,UpdateModifications::Document(docu),None);
+
+                       match handle {
+                        Ok(msg) => info!("Object updated 👍 : {:?}", msg),
+                        Err(e) => warn!("Object has not updated 😧 : {}",e)
+                    }
                     }
                     else {
                         warn!("Object doesn't have query 🔥")
