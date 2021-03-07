@@ -1,15 +1,14 @@
 [package]
-name = "app-test"
+name = "derive_map"
 version = "0.1.0"
-authors = ["CyberWolf <borel.loic.37@gmail.com>"]
+authors = ["CyberWolf37 <borel.loic.37@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-data_sys = { path = "data_sys"}
-derive_map = { path = "derive_map"}
+syn = {version="1.0.57",features=["full","fold"]}
+quote = "1.0.8"
 log = "0.4"
 serde = "1.0.123"
-env_logger = "0.8.3"
 
 [dependencies.mongodb]
 version = "1.2.0"

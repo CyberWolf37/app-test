@@ -1,6 +1,9 @@
 /target
-Cargo.lock
-build.rs
-/data_sys/Cargo.lock
-/data_sys/build.rs
 /data_sys/target
+/derive_map/target
+
+Cargo.lock
+/data_sys/Cargo.lock
+/derive_map/Cargo.lock
+
+build.rs

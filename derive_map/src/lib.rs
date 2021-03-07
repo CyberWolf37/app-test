@@ -13,7 +13,7 @@ pub trait MongoDoc: Serialize {
     fn update(&self, modification: Document,dataColl: Arc<DataCollection>) -> Arc<Task>;
 }
 
-
+#[derive(Clone)]
 pub struct Task {
     status: DataStatus,
     collection: Arc<DataCollection>,
@@ -80,7 +80,7 @@ impl Task {
     }
 }
 
-
+#[derive(Clone)]
 pub enum DataStatus {
     Insert,
     Delete,
